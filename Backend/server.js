@@ -1,26 +1,44 @@
 const express = require('express');
 const mongoose = require('mongoose');
+const bodyParser = require('body-parser');
 const customerRoutes = require('./routes/customerRoutes');
+const ticketRoutes = require('./routes/ticketRoutes');
+const { detectIntent } = require('./dialogflowClient');
+const apolloServer = require('./graphqlServer');
+const dotenv = require('dotenv');
+
+dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const port = process.env.PORT || 3000;
 
 // Middleware
-app.use(express.json());
+app.use(bodyParser.json());
+
+// MongoDB connection
+mongoose.connect(process.env.MONGODB_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+}).then(() => console.log('Connected to MongoDB'))
+  .catch(err => console.log('Error connecting to MongoDB:', err));
 
 // Routes
 app.use('/api/customers', customerRoutes);
+app.use('/api/tickets', ticketRoutes);
 
-// Connect to MongoDB (Assuming you have MongoDB URL defined in an environment variable)
-mongoose.connect('mongodb+srv://rachitsrirkst:L6ZY91ErF6Cji1JP@cluster0.oa0oqlk.mongodb.net', {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-})
-  .then(() => {
-    console.log('Connected to MongoDB');
-    // Start server
-    app.listen(PORT, () => {
-      console.log(`Server running on port ${PORT}`);
-    });
-  })
-  .catch((err) => console.error('Error connecting to MongoDB:', err.message));
+// Dialogflow fulfillment route
+app.post('/webhook', async (req, res) => {
+  const { query, sessionId } = req.body;
+  const response = await detectIntent(query, sessionId);
+  res.json(response);
+});
+
+// Start Apollo Server
+apolloServer.start().then(res => {
+  apolloServer.applyMiddleware({ app });
+
+  // Start server
+  app.listen(port, () => {
+    console.log(`Server running on port ${port}`);
+  });
+});
